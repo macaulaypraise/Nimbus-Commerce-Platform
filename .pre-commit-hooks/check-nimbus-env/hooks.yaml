@@ -1,0 +1,15 @@
+# Schema for publishing this hook as its own repo.
+# Not consumed by pre-commit directly when using the `local` repo above.
+- id: check-nimbus-env
+  name: Nimbus — env file safety
+  description: |
+    Refuses to commit populated .env / .env.test files and verifies
+    every .env* file references the required keys.
+  entry: python hooks.py
+  language: python
+  language_version: python3.12
+  additional_dependencies: []
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
+  types: []

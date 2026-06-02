@@ -1,0 +1,58 @@
+# Mirrors .gitignore with Docker-specific additions.
+
+# Git / metadata
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# Documentation that doesn't belong in the image
+docs/
+*.md
+LICENSE
+NOTICE
+
+# Local environment files (NEVER bake secrets into an image)
+.env
+.env.*
+!.env.example
+!.env.test.example
+!.env.docker
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Tests
+tests/
+test_*.py
+*_test.py
+.pytest_cache/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Docker-in-Docker / compose files
+docker-compose*.yml
+Dockerfile.*
+
+# Secrets (defense in depth — should never live in the build root)
+*.pem
+*.key
+*.crt
+gcp-credentials.json
+service-account*.json
