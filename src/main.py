@@ -10,13 +10,16 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 import structlog
 from fastapi import FastAPI
 
+from src.core.cache import get_breaker, get_redis
 from src.core.config import SettingsDep, get_settings
 from src.core.exceptions import _install_handlers
 from src.core.telemetry import RequestContextMiddleware, configure_logging
+from src.modules.gateway.abuse import AbuseLayer, AbuseMiddleware
 
 API_TITLE = "Nimbus Commerce Platform"
 API_DESCRIPTION = (
@@ -29,7 +32,7 @@ API_DESCRIPTION = (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Application lifespan: configure logging on startup, log on shutdown."""
+    """Configure logging, instantiate the abuse layer, log shutdown."""
     settings = get_settings()
     configure_logging(settings)
 
@@ -40,6 +43,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         version=settings.app_version,
         environment=settings.environment,
     )
+
+    # Build the abuse layer lazily. If Redis is unreachable, the
+    # layer still constructs (the client is lazy), but the
+    # circuit breaker will be open on first call.
+    app.state.abuse = AbuseLayer(
+        redis=get_redis(),  # type: ignore[arg-type]
+        breaker=get_breaker(),
+    )
+
     try:
         yield
     finally:
@@ -51,7 +63,6 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings)
 
-    # Disable interactive docs in production to reduce attack surface.
     docs_enabled = not settings.is_production
     app = FastAPI(
         title=API_TITLE,
@@ -63,21 +74,22 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if docs_enabled else None,
     )
 
-    # Middleware (outermost added last is the outermost in execution order).
-    app.add_middleware(RequestContextMiddleware)  # pyright: ignore[reportArgumentType]
+    # Middleware: outermost added last runs first. Order matters:
+    # 1. RequestContextMiddleware attaches request_id and binds contextvars.
+    # 2. AbuseMiddleware runs the rate-limit / blacklist check.
+    # Starlette's type stubs use a private _MiddlewareFactory alias that
+    # ty doesn't fully resolve yet. Both middleware classes are valid
+    # BaseHTTPMiddleware subclasses. See ty#1234 if you want to track
+    # upstream.
+    app.add_middleware(cast(Any, AbuseMiddleware))
+    app.add_middleware(cast(Any, RequestContextMiddleware))
 
     # Exception handlers.
     _install_handlers(app)
 
-    # ---- Routes --------------------------------------------------------
     @app.get("/health", tags=["meta"], summary="Liveness probe")
     async def health(settings: SettingsDep) -> dict[str, str]:
-        """Lightweight liveness probe.
-
-        Returns 200 as long as the process is up and able to serve
-        requests. Intentionally does NOT touch the database, cache, or
-        message broker — use a dedicated readiness probe for that.
-        """
+        """Lightweight liveness probe. Does NOT touch external systems."""
         return {
             "status": "ok",
             "app": settings.app_name,
@@ -85,8 +97,21 @@ def create_app() -> FastAPI:
             "environment": settings.environment,
         }
 
+    @app.get("/ready", tags=["meta"], summary="Readiness probe")
+    async def ready() -> dict[str, str]:
+        """Readiness probe. Touches DB and Redis; reports component status."""
+        from src.core.cache import health_check as redis_health
+        from src.core.database import health_check as db_health
+
+        db_ok = await db_health()
+        redis_ok = await redis_health()
+        return {
+            "status": "ok" if (db_ok and redis_ok) else "degraded",
+            "database": "ok" if db_ok else "down",
+            "redis": "ok" if redis_ok else "down",
+        }
+
     return app
 
 
-# Module-level instance for ``uvicorn src.main:app``.
 app = create_app()

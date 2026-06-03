@@ -179,6 +179,7 @@ _enforce_test_isolation()
 # ===========================================================================
 
 from src.core.config import Settings, get_settings  # noqa: E402
+from tests.fakes.fake_redis import FakeRedis  # noqa: E402
 
 # ===========================================================================
 # 3. Pytest hooks
@@ -247,3 +248,14 @@ async def http_client() -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client
+
+
+# ===========================================================================
+# 7. Fake Redis fixture (the FakeRedis class lives in tests/fakes/)
+# ===========================================================================
+
+
+@pytest.fixture
+def fake_redis() -> FakeRedis:
+    """Return a fresh in-process Redis stub for unit tests."""
+    return FakeRedis()

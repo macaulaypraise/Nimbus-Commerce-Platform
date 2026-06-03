@@ -148,6 +148,9 @@ repos:
           - structlog~=24.4
           - fastapi
           - starlette
+          - PyJWT~=2.10
+          - argon2-cffi~=23.1
+          - types-python-jose
         args:
           - --strict
           - --no-incremental

@@ -33,6 +33,7 @@ dependencies = [
   "orjson~=3.10.12",
   "httpx~=0.28.1",
   "python-dotenv~=1.0.1",
+  "PyJWT[crypto]~=2.10.1",
 ]
 
 [project.optional-dependencies]
@@ -78,3 +79,29 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 no_implicit_optional = true
 disallow_untyped_defs = true
+
+# -----------------------------------------------------------------------------
+# Type checker configuration
+# -----------------------------------------------------------------------------
+# mypy is the source of truth for type checking. `ty` (Astral's preview
+# type checker) is opt-in for IDE feedback only; we don't gate CI on it.
+#
+# Known `ty` false positives as of ty 0.0.x:
+#   1. `add_middleware(...)` rejects valid BaseHTTPMiddleware subclasses
+#      because Starlette's stubs use a private _MiddlewareFactory alias
+#      that ty doesn't fully resolve.
+#   2. `AbuseLayer(redis=...)` rejects concrete Redis / FakeRedis
+#      instances even though they structurally satisfy the RedisLike
+#      Protocol. ty's Protocol member resolution has a known gap for
+#      this pattern.
+#
+# All suppressions are localized `# type: ignore[invalid-argument-type]`
+# comments. When upgrading ty, search for "ty false positive" in this
+# file to see if any can be removed.
+# -----------------------------------------------------------------------------
+
+[tool.ty.src]
+include = ["src"]
+
+[tool.ty.tests]
+include = ["tests"]

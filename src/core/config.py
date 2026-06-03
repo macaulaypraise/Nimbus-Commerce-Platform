@@ -109,6 +109,12 @@ class Settings(BaseSettings):
     database_max_overflow: int = 20
     database_pool_timeout_seconds: float = 10.0
     database_echo: bool = False
+    database_default_schema: str = "public"
+    database_command_timeout_seconds: float = 30.0
+    database_health_check_interval_seconds: int = 30
+    # Per-module schema allowlist. Each module may only write to its
+    # own schema. An empty list disables enforcement (use only in dev).
+    database_module_schemas: dict[str, str] = Field(default_factory=dict)
 
     # --- Redis ----------------------------------------------------------
     redis_url: str = Field(
@@ -116,6 +122,31 @@ class Settings(BaseSettings):
     )
     redis_max_connections: int = 20
     redis_socket_timeout_seconds: float = 5.0
+    redis_health_check_interval_seconds: int = 30
+    redis_circuit_breaker_fail_max: int = 5
+    redis_circuit_breaker_reset_timeout_seconds: float = 30.0
+
+    # --- JWT (auth) -----------------------------------------------------
+    jwt_secret_key: str = Field(
+        default="dev-only-secret-replace-me",
+        description=(
+            "HMAC secret for JWT signing. MUST be a random 32+ byte "
+            "string in production. Distinct from SECRET_KEY so the "
+            "JWT secret can be rotated independently."
+        ),
+    )
+    jwt_algorithm: str = "HS256"
+    jwt_issuer: str = "nimbus"
+    jwt_audience: str = "nimbus-api"
+    jwt_access_token_ttl_seconds: int = 900  # 15 minutes
+    jwt_refresh_token_ttl_seconds: int = 604_800  # 7 days
+
+    # --- Abuse layer (gateway) -----------------------------------------
+    abuse_rate_limit_window_seconds: int = 60
+    abuse_rate_limit_max: int = 100  # 429 above this
+    abuse_blacklist_threshold: int = 200  # blacklist above this
+    abuse_blacklist_ttl_seconds: int = 3_600  # 1 hour
+    abuse_trust_forwarded_for: bool = False  # set true behind a trusted proxy
 
     # --- Kafka ----------------------------------------------------------
     kafka_bootstrap_servers: CsvStrList = Field(
