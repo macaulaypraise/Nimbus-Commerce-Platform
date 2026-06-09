@@ -151,6 +151,7 @@ repos:
           - PyJWT~=2.10
           - argon2-cffi~=23.1
           - types-python-jose
+          - aiokafka
         args:
           - --strict
           - --no-incremental

@@ -100,11 +100,47 @@ class FakeRedis:
             self.sorted_sets.pop(key, None)
             self.expirations.pop(key, None)
 
-    async def set(self, key: str, value: str, ex: int | None = None) -> bool:
+    async def set(
+        self,
+        key: str,
+        value: str,
+        ex: int | None = None,
+        nx: bool = False,
+        **kwargs: Any,
+    ) -> bool | None:
+        """Set a key with optional NX (set only if not exists) and EX (TTL)."""
+        self._evict_if_expired(key)
+        if nx and key in self.store:
+            return None  # NX failure: key already exists
         self.store[key] = value
         if ex is not None:
             self.expirations[key] = time.time() + ex
         return True
+
+    async def eval(
+        self,
+        script: str,
+        numkeys: int,
+        *args: Any,
+    ) -> Any:
+        """Minimal Lua eval support.
+
+        We only need to support one script: the lock-release script
+        that does ``if GET key == ARGV[1] then DEL key``. We
+        implement it directly in Python rather than parsing Lua.
+        """
+        if numkeys != 1:
+            raise NotImplementedError(f"FakeRedis.eval only supports numkeys=1, got {numkeys}")
+        key = args[0]
+        expected_token = args[1]
+        current = await self.get(key)
+        if current is None:
+            return 0
+        current_str = current.decode("utf-8") if isinstance(current, bytes) else str(current)
+        if current_str == expected_token:
+            await self.delete(key)
+            return 1
+        return 0
 
     async def get(self, key: str) -> bytes | None:
         self._evict_if_expired(key)

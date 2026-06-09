@@ -64,5 +64,37 @@ class RedisLike(Protocol):
     async def zcard(self, key: Any) -> int: ...
     async def expire(self, key: Any, seconds: int) -> bool: ...
 
+    # Server-side script evaluation. Used by the lock release
+    # to do a compare-and-delete atomically. The real signature
+    # has more parameters; we declare the ones we use.
+    async def eval(self, script: str, numkeys: int, *args: Any) -> Any: ...
+
     # Script registration
     def register_script(self, source: str) -> Any: ...
+
+
+@runtime_checkable
+class AsyncLockClient(Protocol):
+    """Minimal lock surface our service code depends on.
+
+    Both the real ``redis.asyncio.Redis`` and ``FakeRedis`` satisfy
+    this structurally.
+    """
+
+    async def set(
+        self,
+        key: Any,
+        value: Any,
+        nx: bool = ...,
+        ex: int | None = ...,
+        **kwargs: Any,
+    ) -> Any: ...
+    async def get(self, key: Any) -> Any: ...
+    async def delete(self, *keys: Any) -> int: ...
+    async def eval(
+        self,
+        script: str,
+        numkeys: int,
+        *args: Any,
+    ) -> Any: ...
+    async def aclose(self) -> None: ...

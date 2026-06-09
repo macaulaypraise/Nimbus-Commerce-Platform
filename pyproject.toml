@@ -105,3 +105,7 @@ include = ["src"]
 
 [tool.ty.tests]
 include = ["tests"]
+
+[[tool.mypy.overrides]]
+module = "aiokafka.*"
+ignore_missing_imports = true
