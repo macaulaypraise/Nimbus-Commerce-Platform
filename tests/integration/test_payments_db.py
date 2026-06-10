@@ -48,32 +48,16 @@ async def engine():
 
 @pytest.fixture
 async def session_factory(engine):
-    """Function-scoped session factory with payments schema bootstrap.
-
-    Sets up ``CREATE SCHEMA IF NOT EXISTS payments`` and the
-    metadata-defined tables before the test, then drops the
-    schema in teardown. The teardown wraps the ``DROP SCHEMA``
-    in a try/except so a failing test doesn't leave a half-
-    torn-down schema in the database.
-    """
-    # Setup: create schema and tables.
     async with engine.begin() as conn:
-        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS payments"))
+        await conn.execute(text("DROP SCHEMA IF EXISTS payments CASCADE"))
+        await conn.execute(text("CREATE SCHEMA payments"))
         await conn.run_sync(Base.metadata.create_all)
 
-    factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        yield factory
+        yield async_sessionmaker(engine, expire_on_commit=False)
     finally:
-        # Teardown: drop the schema. If the test errored during
-        # setup and the schema is already gone, that's fine.
-        try:
-            async with engine.begin() as conn:
-                await conn.execute(text("DROP SCHEMA IF EXISTS payments CASCADE"))
-        except Exception:
-            # Don't mask the original test error with a teardown
-            # error. Just log; the next test run will reset.
-            pass
+        async with engine.begin() as conn:
+            await conn.execute(text("DROP SCHEMA IF EXISTS payments CASCADE"))
 
 
 @pytest.mark.asyncio(loop_scope="session")

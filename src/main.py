@@ -17,9 +17,12 @@ from fastapi import FastAPI
 
 from src.core.cache import get_breaker, get_redis
 from src.core.config import SettingsDep, get_settings
+from src.core.database import get_engine
 from src.core.exceptions import _install_handlers
+from src.core.messaging import get_producer
 from src.core.telemetry import RequestContextMiddleware, configure_logging
 from src.modules.gateway.abuse import AbuseLayer, AbuseMiddleware
+from src.workers.outbox_relay import OutboxRelay
 
 API_TITLE = "Nimbus Commerce Platform"
 API_DESCRIPTION = (
@@ -32,7 +35,7 @@ API_DESCRIPTION = (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Configure logging, instantiate the abuse layer, log shutdown."""
+    """Configure logging, build singletons, start workers, log shutdown."""
     settings = get_settings()
     configure_logging(settings)
 
@@ -44,18 +47,42 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         environment=settings.environment,
     )
 
-    # Build the abuse layer lazily. If Redis is unreachable, the
-    # layer still constructs (the client is lazy), but the
-    # circuit breaker will be open on first call.
+    # --- Build singletons -------------------------------------------
     app.state.abuse = AbuseLayer(
         redis=get_redis(),  # type: ignore[arg-type]
         breaker=get_breaker(),
     )
 
+    # --- Start background workers -----------------------------------
+    relay: OutboxRelay | None = None
+    if settings.outbox_relay_enabled:
+        try:
+            producer = get_producer()
+            await producer.start()
+            relay = OutboxRelay(engine=get_engine(), producer=producer)
+            await relay.start()
+        except Exception as exc:
+            log.error(
+                "outbox_relay.start_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            # Don't prevent the app from starting; the relay
+            # being down is a degraded mode, not a fatal error.
+            relay = None
+
     try:
         yield
     finally:
         log.info("app.shutdown", app=settings.app_name, version=settings.app_version)
+        if relay is not None:
+            await relay.stop()
+        try:
+            producer = get_producer()
+            if producer.started:
+                await producer.stop()
+        except Exception:
+            pass
 
 
 def create_app() -> FastAPI:

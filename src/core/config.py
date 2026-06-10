@@ -148,6 +148,13 @@ class Settings(BaseSettings):
     abuse_blacklist_ttl_seconds: int = 3_600  # 1 hour
     abuse_trust_forwarded_for: bool = False  # set true behind a trusted proxy
 
+    # --- Outbox relay (background worker) -------------------------------
+    outbox_relay_enabled: bool = True
+    outbox_relay_poll_interval_seconds: float = 1.0
+    outbox_relay_batch_size: int = 50
+    outbox_relay_max_attempts: int = 10
+    outbox_relay_graceful_shutdown_timeout_seconds: float = 10.0
+
     # --- Kafka ----------------------------------------------------------
     kafka_bootstrap_servers: CsvStrList = Field(
         default_factory=lambda: ["127.0.0.1:9092"],

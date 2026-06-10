@@ -243,6 +243,24 @@ class OutboxEvent(Base):
         nullable=True,
     )
 
+    # --- Retry tracking -------------------------------------------------
+    attempt_count: Mapped[int] = mapped_column(
+        nullable=False,
+        default=0,
+        comment="Number of publish attempts. Used for poison-pill detection.",
+    )
+    failed: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=False,
+        index=True,
+        comment="Set to true after max_attempts is reached. The relay will not retry these rows.",
+    )
+    last_error: Mapped[str | None] = mapped_column(
+        String(length=1024),
+        nullable=True,
+        comment="Last error message from a failed publish attempt. For debugging only.",
+    )
+
     # --- Optional correlation to the originating business row ----------
     # Nullable because some events are not tied to a specific
     # business entity (e.g., system events). We use a stringly-typed
