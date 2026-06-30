@@ -22,6 +22,7 @@ from src.core.exceptions import _install_handlers
 from src.core.messaging import get_producer
 from src.core.telemetry import RequestContextMiddleware, configure_logging
 from src.modules.gateway.abuse import AbuseLayer, AbuseMiddleware
+from src.modules.orders.consumer import OrderConsumer
 from src.workers.outbox_relay import OutboxRelay
 
 API_TITLE = "Nimbus Commerce Platform"
@@ -71,6 +72,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # being down is a degraded mode, not a fatal error.
             relay = None
 
+    # Start the order consumer
+    order_consumer: OrderConsumer | None = None
+    if settings.kafka_consumer_enabled:
+        try:
+            order_consumer = OrderConsumer()
+            await order_consumer.start()
+        except Exception as exc:
+            log.error(
+                "order_consumer.start_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            order_consumer = None
     try:
         yield
     finally:
@@ -81,6 +95,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             producer = get_producer()
             if producer.started:
                 await producer.stop()
+            if order_consumer is not None:
+                await order_consumer.stop()
         except Exception:
             pass
 

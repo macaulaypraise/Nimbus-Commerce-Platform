@@ -26,6 +26,7 @@ to prevent bleed-through between test cases.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import Annotated, Any
 
@@ -46,6 +47,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import AsyncAdaptedQueuePool, NullPool
 from sqlalchemy.sql import text
+from sqlalchemy.sql import text as sql_text
 
 from src.core.config import Settings, get_settings
 from src.core.exceptions import (
@@ -325,3 +327,49 @@ async def health_check() -> bool:
     except Exception as exc:
         _log.warning("db.health_check_failed", error=str(exc))
         return False
+
+
+@asynccontextmanager
+async def with_schemas(
+    session: AsyncSession,
+    *schemas: str,
+) -> AsyncIterator[AsyncSession]:
+    """Temporarily widen the search_path for this transaction.
+
+    Use this for cross-module operations (e.g., a saga that
+    writes to both ``orders`` and ``inventory``). The
+    widening is transaction-scoped: ``SET LOCAL`` reverts
+    automatically when the surrounding transaction commits
+    or rolls back.
+
+    Args:
+        session: an open :class:`AsyncSession` inside an
+            explicit transaction (``async with session.begin():``).
+        *schemas: schema names to add to the search_path. The
+            ``public`` schema is always appended so built-in
+            types and functions remain accessible.
+
+    Yields:
+        The same session, with the widened search_path.
+
+    Example::
+
+        async with session.begin():
+            async with with_schemas(session, "orders", "inventory"):
+                # SELECTs and INSERTs here can see both schemas.
+                ...
+    """
+    if not schemas:
+        raise ValueError("at least one schema must be provided")
+    # Validate schema names to prevent SQL injection through
+    # the SET LOCAL statement. Schema names in PostgreSQL can
+    # only contain letters, digits, underscores, and must
+    # start with a letter or underscore.
+    for s in schemas:
+        if not s or not all(c.isalnum() or c == "_" for c in s) or s[0].isdigit():
+            raise ValueError(f"Invalid schema name {s!r}")
+    schema_list = ", ".join((*schemas, "public"))
+    await session.execute(sql_text(f"SET LOCAL search_path TO {schema_list}"))
+    yield session
+    # SET LOCAL is automatically reverted on commit/rollback;
+    # no explicit reset needed.

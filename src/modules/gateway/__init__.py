@@ -7,6 +7,12 @@ The gateway owns:
 
 It is the only module that talks to clients directly. All other
 modules expose their services through gateway-mediated routes.
+
+Note: this __init__.py intentionally does NOT import the
+router or the dependencies module. Both depend on the users
+module, which would create a circular import: users ->
+gateway.security -> gateway.__init__ -> router -> users.services.
+The router is imported directly by main.py where needed.
 """
 
 from __future__ import annotations

@@ -440,33 +440,31 @@ async def process_payment(
     async with idempotency_lock(request.idempotency_key, redis=redis):
         # ``begin`` opens an explicit transaction; the ``async with``
         # block commits on clean exit and rolls back on exception.
-        async with session.begin():
-            # FOR UPDATE so two concurrent transactions on the same
-            # payment row serialize. The Redis lock is the outer
-            # guard; the row lock is the inner guard.
-            stmt = select(Payment).where(Payment.id == request.payment_id).with_for_update()
-            result = await session.execute(stmt)
-            payment = result.scalar_one_or_none()
-            if payment is None:
-                raise PaymentNotFoundError(
-                    "Payment does not exist.",
-                    details={"payment_id": str(request.payment_id)},
-                )
-
-            _validate_transition(payment.status, request.new_status)
-            payment.status = request.new_status
-
-            envelope = build_payment_event(
-                payment=payment,
-                event_type=f"payments.payment_{request.new_status.value}",
-                extra_payload=request.extra_payload,
+        # FOR UPDATE so two concurrent transactions on the same
+        # payment row serialize. The Redis lock is the outer
+        # guard; the row lock is the inner guard.
+        stmt = select(Payment).where(Payment.id == request.payment_id).with_for_update()
+        result = await session.execute(stmt)
+        payment = result.scalar_one_or_none()
+        if payment is None:
+            raise PaymentNotFoundError(
+                "Payment does not exist.",
+                details={"payment_id": str(request.payment_id)},
             )
-            outbox = build_outbox_event(envelope, topic="payments.events")
 
-            session.add(payment)
-            session.add(outbox)
-            # The ``async with session.begin()`` block will commit
-            # here on clean exit.
+        _validate_transition(payment.status, request.new_status)
+        payment.status = request.new_status
+
+        envelope = build_payment_event(
+            payment=payment,
+            event_type=f"payments.payment_{request.new_status.value}",
+            extra_payload=request.extra_payload,
+        )
+        outbox = build_outbox_event(envelope, topic="payments.events")
+
+        session.add(payment)
+        session.add(outbox)
+        # The ``async with session.begin()`` block will commit here on clean exit.
 
         _log.info(
             "payments.processed",

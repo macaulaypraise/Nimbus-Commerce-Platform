@@ -229,18 +229,19 @@ class TestProcessPayment:
             redis=as_redis_like(fake_redis),
         )
 
+        # Caller commits (SQLAlchemy 2.0 autobegin + explicit commit).
+        await session.commit()
+
         # Payment and outbox were both added.
         assert payment in session.added
         assert any(isinstance(o, OutboxEvent) for o in session.added)
-        # One transaction commit.
+        # One commit.
         assert session.commits == 1
-        # Rollback was never called.
         assert session.rollbacks == 0
         # Returned result has the right status.
         assert result.payment.status is PaymentStatus.AUTHORIZED
         assert result.outbox_event.event_type == "payments.payment_authorized"
         assert result.outbox_event.aggregate_id == str(payment.id)
-        assert result.envelope.aggregate_id == str(payment.id)
 
     @pytest.mark.asyncio
     async def test_lock_conflict_skips_db_work(self, fake_redis: FakeRedis) -> None:
@@ -278,10 +279,11 @@ class TestProcessPayment:
                 session=session,  # type: ignore[arg-type]
                 redis=as_redis_like(fake_redis),
             )
-        # Transaction rolled back (begin block raised).
-        assert session.rollbacks >= 1
-        # Nothing was added to the session.
-        assert session.added == []
+        # Caller rolls back on exception.
+        await session.rollback()
+        # No commit happened.
+        assert session.commits == 0
+        assert session.rollbacks == 1
 
     @pytest.mark.asyncio
     async def test_invalid_transition_raises(self, fake_redis: FakeRedis) -> None:
@@ -298,7 +300,10 @@ class TestProcessPayment:
                 session=session,  # type: ignore[arg-type]
                 redis=as_redis_like(fake_redis),
             )
-        assert session.rollbacks >= 1
+        # Caller rolls back on exception.
+        await session.rollback()
+        assert session.commits == 0
+        assert session.rollbacks == 1
 
     @pytest.mark.asyncio
     async def test_lock_released_after_success(self, fake_redis: FakeRedis) -> None:

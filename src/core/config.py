@@ -163,8 +163,11 @@ class Settings(BaseSettings):
             "TEST_KAFKA_BOOTSTRAP_SERVERS",
         ),
     )
-    kafka_consumer_group: str = "nimbus"
+    # kafka_consumer_group: str = "nimbus"
     kafka_request_timeout_ms: int = 30_000
+    # --- Kafka consumer -------------------------------------------------
+    kafka_consumer_enabled: bool = True
+    kafka_consumer_group: str = "nimbus-orders"
 
     # --- Telemetry ------------------------------------------------------
     log_level: str = "INFO"
